@@ -11,7 +11,6 @@ public enum AMFValue {
     case undefined
     case reference(UInt16)
     case ecmaArray([String: AMFValue])
-    case objectEnd
     case strictArray([AMFValue])
     case date(Date)
     case longString(String)

@@ -42,9 +42,6 @@ public struct AMFDecoder {
             return try .reference(parseReference(at: &index, in: data))
         case .ecmaArray:
             return try .ecmaArray(parseECMAArray(at: &index, in: data))
-        case .objectEnd:
-            try parseObjectEnd(at: &index, in: data)
-            return .objectEnd
         case .strictArray:
             return try .strictArray(parseStrictArray(at: &index, in: data))
         case .date:
@@ -69,7 +66,7 @@ public struct AMFDecoder {
 
     private func parseNumber(at index: inout Int, in data: Data) throws -> Double {
         try consumeBytes(of: data, startingAt: &index, count: 8).withUnsafeBytes { pointer in
-            pointer.load(as: Double.self)
+            Double(bitPattern: pointer.load(as: UInt64.self))
         }
     }
 
@@ -93,7 +90,12 @@ public struct AMFDecoder {
     }
 
     private func parseObject(at index: inout Int, in data: Data) throws -> [String: AMFValue] {
-        fatalError("Unimplemented")
+        var object: [String: AMFValue] = [:]
+        while parseEndOfObject(at: &index, in: data) == false {
+            let key = try parseString(at: &index, in: data)
+            object[key] = try parseNextValue(at: &index, in: data)
+        }
+        return object
     }
 
     private func parseMovieClip(at index: inout Int, in data: Data) throws -> Never {
@@ -107,10 +109,6 @@ public struct AMFDecoder {
     }
 
     private func parseECMAArray(at index: inout Int, in data: Data) throws -> [String: AMFValue] {
-        fatalError("Unimplemented")
-    }
-
-    private func parseObjectEnd(at index: inout Int, in data: Data) throws {
         fatalError("Unimplemented")
     }
 
@@ -179,6 +177,20 @@ public struct AMFDecoder {
             throw AMFDecoderError.invalidUTF8String
         }
         return string
+    }
+
+    /// Returns true if the end-of-object bytes were able to be parsed and consumed. If false, no bytes were consumed.
+    private func parseEndOfObject(at index: inout Int, in data: Data) -> Bool {
+        guard index + 3 <= data.count else {
+            return false
+        }
+        // '0x00 0x00' == UTF-8-empty and '0x09' == object-end-marker
+        if data[index..<(index + 3)].elementsEqual([0x00, 0x00, 0x09]) {
+            index += 3 // Only consume the bytes if it's a match
+            return true
+        } else {
+            return false
+        }
     }
 }
 

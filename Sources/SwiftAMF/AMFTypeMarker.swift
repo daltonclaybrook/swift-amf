@@ -13,7 +13,6 @@ public enum AMFTypeMarker: UInt8 {
     case undefined = 0x06
     case reference = 0x07
     case ecmaArray = 0x08
-    case objectEnd = 0x09
     case strictArray = 0x0A
     case date = 0x0B
     case longString = 0x0C
