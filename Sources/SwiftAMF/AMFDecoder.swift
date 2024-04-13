@@ -9,7 +9,7 @@ public struct AMFDecoder {
         var currentIndex = 0
         var values: [AMFValue] = []
         while currentIndex < data.count {
-            let byte = consumeByte(of: data, at: &currentIndex)
+            let byte = try consumeByte(of: data, at: &currentIndex)
             guard let typeMarker = AMFTypeMarker(rawValue: byte) else {
                 throw AMFDecoderError.unexpectedTypeMarker(byte)
             }
@@ -26,10 +26,8 @@ public struct AMFDecoder {
             case .movieClip:
                 try parseMovieClip(at: &currentIndex, in: data)
             case .null:
-                try parseNull(at: &currentIndex, in: data)
                 values.append(.null)
             case .undefined:
-                try parseUndefined(at: &currentIndex, in: data)
                 values.append(.undefined)
             case .reference:
                 try values.append(.reference(parseReference(at: &currentIndex, in: data)))
@@ -45,7 +43,6 @@ public struct AMFDecoder {
             case .longString:
                 try values.append(.longString(parseLongString(at: &currentIndex, in: data)))
             case .unsupported:
-                try parseUnsupported(at: &currentIndex, in: data)
                 values.append(.unsupported)
             case .recordSet:
                 try parseRecordSet(at: &currentIndex, in: data)
@@ -60,18 +57,31 @@ public struct AMFDecoder {
         }
     }
 
-    // MARK: - Private helpers
+    // MARK: - Type parser functions
 
     private func parseNumber(at index: inout Int, in data: Data) throws -> Double {
-        fatalError("Unimplemented")
+        try consumeBytes(of: data, startingAt: &index, count: 8).withUnsafeBytes { pointer in
+            pointer.load(as: Double.self)
+        }
     }
 
     private func parseBoolean(at index: inout Int, in data: Data) throws -> Bool {
-        fatalError("Unimplemented")
+        let value = try consumeByte(of: data, at: &index)
+        switch value {
+        case 0:
+            return false
+        case 2:
+            return true
+        default:
+            throw AMFDecoderError.invalidValueForBoolean(value)
+        }
     }
 
     private func parseString(at index: inout Int, in data: Data) throws -> String {
-        fatalError("Unimplemented")
+        let length = try consumeBytes(of: data, startingAt: &index, count: 2).withUnsafeBytes { pointer in
+            UInt16(bigEndian: pointer.load(as: UInt16.self))
+        }
+        return try _parseString(at: &index, in: data, length: Int(length))
     }
 
     private func parseObject(at index: inout Int, in data: Data) throws -> [String: AMFValue] {
@@ -82,16 +92,10 @@ public struct AMFDecoder {
         throw AMFDecoderError.reservedTypeNotSupported(.movieClip)
     }
 
-    private func parseNull(at index: inout Int, in data: Data) throws {
-        fatalError("Unimplemented")
-    }
-
-    private func parseUndefined(at index: inout Int, in data: Data) throws {
-        fatalError("Unimplemented")
-    }
-
     private func parseReference(at index: inout Int, in data: Data) throws -> UInt16 {
-        fatalError("Unimplemented")
+        try consumeBytes(of: data, startingAt: &index, count: 2).withUnsafeBytes { pointer in
+            UInt16(bigEndian: pointer.load(as: UInt16.self))
+        }
     }
 
     private func parseECMAArray(at index: inout Int, in data: Data) throws -> [String: AMFValue] {
@@ -107,15 +111,21 @@ public struct AMFDecoder {
     }
 
     private func parseDate(at index: inout Int, in data: Data) throws -> Date {
-        fatalError("Unimplemented")
+        let dateNumber = try parseNumber(at: &index, in: data)
+        let timeZone = try consumeBytes(of: data, startingAt: &index, count: 2).withUnsafeBytes { pointer in
+            Int16(bigEndian: pointer.load(as: Int16.self))
+        }
+        if timeZone != 0 {
+            print("Unexpected non-zero time zone: \(timeZone)")
+        }
+        return Date(timeIntervalSince1970: dateNumber / 1_000)
     }
 
     private func parseLongString(at index: inout Int, in data: Data) throws -> String {
-        fatalError("Unimplemented")
-    }
-
-    private func parseUnsupported(at index: inout Int, in data: Data) throws {
-        fatalError("Unimplemented")
+        let length = try consumeBytes(of: data, startingAt: &index, count: 4).withUnsafeBytes { pointer in
+            UInt32(bigEndian: pointer.load(as: UInt32.self))
+        }
+        return try _parseString(at: &index, in: data, length: Int(length))
     }
 
     private func parseRecordSet(at index: inout Int, in data: Data) throws -> Never {
@@ -123,7 +133,10 @@ public struct AMFDecoder {
     }
 
     private func parseXMLDocument(at index: inout Int, in data: Data) throws -> String {
-        fatalError("Unimplemented")
+        let length = try consumeBytes(of: data, startingAt: &index, count: 4).withUnsafeBytes { pointer in
+            UInt32(bigEndian: pointer.load(as: UInt32.self))
+        }
+        return try _parseString(at: &index, in: data, length: Int(length))
     }
 
     private func parseTypedObject(at index: inout Int, in data: Data) throws -> (className: String, [String: AMFValue]) {
@@ -134,14 +147,38 @@ public struct AMFDecoder {
         throw AMFDecoderError.amfVersion3NotYetSupported
     }
 
-    private func consumeByte(of data: Data, at index: inout Int) -> UInt8 {
+    // MARK: - Helpers
+
+    private func consumeByte(of data: Data, at index: inout Int) throws -> UInt8 {
+        guard index < data.count else {
+            throw AMFDecoderError.unexpectedEndOfData
+        }
         defer { index += 1}
         return data[index]
+    }
+
+    private func consumeBytes(of data: Data, startingAt index: inout Int, count: Int) throws -> [UInt8] {
+        guard index + count <= data.count else {
+            throw AMFDecoderError.unexpectedEndOfData
+        }
+        defer { index += count }
+        return Array(data[index..<(index + count)])
+    }
+
+    private func _parseString(at index: inout Int, in data: Data, length: Int) throws -> String {
+        let stringBytes = try consumeBytes(of: data, startingAt: &index, count: length)
+        guard let string = String(data: Data(stringBytes), encoding: .utf8) else {
+            throw AMFDecoderError.invalidUTF8String
+        }
+        return string
     }
 }
 
 enum AMFDecoderError: Error {
     case unexpectedTypeMarker(UInt8)
+    case unexpectedEndOfData
+    case invalidValueForBoolean(UInt8)
+    case invalidUTF8String
     case reservedTypeNotSupported(AMFTypeMarker)
     case amfVersion3NotYetSupported
 }
