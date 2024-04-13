@@ -2,21 +2,21 @@
 
 import Foundation
 
-public enum AMFType {
+public enum AMFValue {
     case number(Double)
     case boolean(Bool)
     case string(String)
-    case object([String: AMFType])
+    case object([String: AMFValue])
     case null
     case undefined
     case reference(UInt16)
-    case ecmaArray([String: AMFType])
+    case ecmaArray([String: AMFValue])
     case objectEnd
-    case strictArray([AMFType])
+    case strictArray([AMFValue])
     case date(Date)
     case longString(String)
     case unsupported
     case xmlDocument(String)
-    case typedObject(className: String, [String: AMFType])
+    case typedObject(className: String, [String: AMFValue])
     case avmPlusObject
 }

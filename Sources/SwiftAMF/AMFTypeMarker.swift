@@ -2,7 +2,7 @@
 
 import Foundation
 
-enum AMFTypeMarker: UInt8 {
+public enum AMFTypeMarker: UInt8 {
     case number = 0x00
     case boolean = 0x01
     case string = 0x02
