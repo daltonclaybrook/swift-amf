@@ -5,55 +5,63 @@ import Foundation
 public struct AMFDecoder {
     public init() {}
 
-    public func decode(data: Data) throws {
+    public func decode(data: Data) throws -> [AMFValue] {
         var currentIndex = 0
         var values: [AMFValue] = []
         while currentIndex < data.count {
-            let byte = try consumeByte(of: data, at: &currentIndex)
-            guard let typeMarker = AMFTypeMarker(rawValue: byte) else {
-                throw AMFDecoderError.unexpectedTypeMarker(byte)
-            }
+            let nextValue = try parseNextValue(at: &currentIndex, in: data)
+            values.append(nextValue)
+        }
+        return values
+    }
 
-            switch typeMarker {
-            case .number:
-                try values.append(.number(parseNumber(at: &currentIndex, in: data)))
-            case .boolean:
-                try values.append(.boolean(parseBoolean(at: &currentIndex, in: data)))
-            case .string:
-                try values.append(.string(parseString(at: &currentIndex, in: data)))
-            case .object:
-                try values.append(.object(parseObject(at: &currentIndex, in: data)))
-            case .movieClip:
-                try parseMovieClip(at: &currentIndex, in: data)
-            case .null:
-                values.append(.null)
-            case .undefined:
-                values.append(.undefined)
-            case .reference:
-                try values.append(.reference(parseReference(at: &currentIndex, in: data)))
-            case .ecmaArray:
-                try values.append(.ecmaArray(parseECMAArray(at: &currentIndex, in: data)))
-            case .objectEnd:
-                try parseObjectEnd(at: &currentIndex, in: data)
-                values.append(.objectEnd)
-            case .strictArray:
-                try values.append(.strictArray(parseStrictArray(at: &currentIndex, in: data)))
-            case .date:
-                try values.append(.date(parseDate(at: &currentIndex, in: data)))
-            case .longString:
-                try values.append(.longString(parseLongString(at: &currentIndex, in: data)))
-            case .unsupported:
-                values.append(.unsupported)
-            case .recordSet:
-                try parseRecordSet(at: &currentIndex, in: data)
-            case .xmlDocument:
-                try values.append(.xmlDocument(parseXMLDocument(at: &currentIndex, in: data)))
-            case .typedObject:
-                let (className, object) = try parseTypedObject(at: &currentIndex, in: data)
-                values.append(.typedObject(className: className, object))
-            case .avmPlusObject:
-                try parseAVMPlusObject(at: &currentIndex, in: data)
-            }
+    // MARK: - Next value parser
+
+    private func parseNextValue(at index: inout Int, in data: Data) throws -> AMFValue {
+        let byte = try consumeByte(of: data, at: &index)
+        guard let typeMarker = AMFTypeMarker(rawValue: byte) else {
+            throw AMFDecoderError.unexpectedTypeMarker(byte)
+        }
+
+        switch typeMarker {
+        case .number:
+            return try .number(parseNumber(at: &index, in: data))
+        case .boolean:
+            return try .boolean(parseBoolean(at: &index, in: data))
+        case .string:
+            return try .string(parseString(at: &index, in: data))
+        case .object:
+            return try .object(parseObject(at: &index, in: data))
+        case .movieClip:
+            try parseMovieClip(at: &index, in: data)
+        case .null:
+            return .null
+        case .undefined:
+            return .undefined
+        case .reference:
+            return try .reference(parseReference(at: &index, in: data))
+        case .ecmaArray:
+            return try .ecmaArray(parseECMAArray(at: &index, in: data))
+        case .objectEnd:
+            try parseObjectEnd(at: &index, in: data)
+            return .objectEnd
+        case .strictArray:
+            return try .strictArray(parseStrictArray(at: &index, in: data))
+        case .date:
+            return try .date(parseDate(at: &index, in: data))
+        case .longString:
+            return try .longString(parseLongString(at: &index, in: data))
+        case .unsupported:
+            return try .unsupported
+        case .recordSet:
+            try parseRecordSet(at: &index, in: data)
+        case .xmlDocument:
+            return try .xmlDocument(parseXMLDocument(at: &index, in: data))
+        case .typedObject:
+            let (className, object) = try parseTypedObject(at: &index, in: data)
+            return .typedObject(className: className, object)
+        case .avmPlusObject:
+            try parseAVMPlusObject(at: &index, in: data)
         }
     }
 
