@@ -70,15 +70,13 @@ public struct AMFDecoder {
         }
     }
 
+    /// A zero byte value denotes false while a non-zero byte value (typically 1) denotes true.
     private func parseBoolean(at index: inout Int, in data: Data) throws -> Bool {
         let value = try consumeByte(of: data, at: &index)
-        switch value {
-        case 0:
+        if value == 0 {
             return false
-        case 2:
+        } else {
             return true
-        default:
-            throw AMFDecoderError.invalidValueForBoolean(value)
         }
     }
 
@@ -109,11 +107,28 @@ public struct AMFDecoder {
     }
 
     private func parseECMAArray(at index: inout Int, in data: Data) throws -> [String: AMFValue] {
-        fatalError("Unimplemented")
+        let length = try consumeBytes(of: data, startingAt: &index, count: 4).withUnsafeBytes { pointer in
+            UInt32(bigEndian: pointer.load(as: UInt32.self))
+        }
+        let array: [String: AMFValue] = try (0..<length).reduce(into: [:]) { result, _ in
+            let key = try parseString(at: &index, in: data)
+            result[key] = try parseNextValue(at: &index, in: data)
+        }
+        guard parseEndOfObject(at: &index, in: data) else {
+            // ECMA arrays are expected to have [0x00, 0x00, 0x09] at the end
+            throw AMFDecoderError.expectedObjectEndTypeAfterECMAArray
+        }
+        return array
     }
 
     private func parseStrictArray(at index: inout Int, in data: Data) throws -> [AMFValue] {
-        fatalError("Unimplemented")
+        let length = try consumeBytes(of: data, startingAt: &index, count: 4).withUnsafeBytes { pointer in
+            UInt32(bigEndian: pointer.load(as: UInt32.self))
+        }
+        let array = try (0..<length).map { _ in
+            try parseNextValue(at: &index, in: data)
+        }
+        return array
     }
 
     private func parseDate(at index: inout Int, in data: Data) throws -> Date {
@@ -197,8 +212,8 @@ public struct AMFDecoder {
 enum AMFDecoderError: Error {
     case unexpectedTypeMarker(UInt8)
     case unexpectedEndOfData
-    case invalidValueForBoolean(UInt8)
     case invalidUTF8String
     case reservedTypeNotSupported(AMFTypeMarker)
     case amfVersion3NotYetSupported
+    case expectedObjectEndTypeAfterECMAArray
 }
