@@ -66,7 +66,7 @@ public struct AMFDecoder {
 
     private func parseNumber(at index: inout Int, in data: Data) throws -> Double {
         try consumeBytes(of: data, startingAt: &index, count: 8).withUnsafeBytes { pointer in
-            Double(bitPattern: pointer.load(as: UInt64.self))
+            Double(bitPattern: pointer.load(as: UInt64.self).bigEndian)
         }
     }
 
